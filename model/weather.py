@@ -25,14 +25,18 @@ def create_table(df, table_name):
 	spark.sql("drop table if exists {0}".format(table_name))
 
 	print("Saving table '{0}'".format(table_name))
-	df.coalesce(5).write.saveAsTable(table_name, format="parquet", mode="overwrite")
+	df.coalesce(4).write.saveAsTable(table_name, format="parquet", mode="overwrite")
 
-print("Loading and Caching Data")
+print("Loading and caching data")
 train = spark.read.load("../datasets/train.csv", format="csv", sep=",", inferSchema="true", header="true")
 train = train.dropDuplicates(["building_id", "meter", "timestamp"])
 train.cache()
-print("Training row count: {0}".format(train.count()))
-#test = spark.read.load("../datasets/test.csv", format="csv", sep=",", inferSchema="true", header="true")
+print("Training dataset row count: {0}".format(train.count()))
+
+test = spark.read.load("../datasets/test.csv", format="csv", sep=",", inferSchema="true", header="true")
+test = test.dropDuplicates(["building_id", "meter", "timestamp"])
+test.cache()
+print("Test dataset row count: {0}".format(test.count()))
 
 meta = spark.read.load("../datasets/building_metadata.csv", format="csv", sep=",", inferSchema="true", header="true")
 meta = meta.withColumnRenamed("building_id", "building_id_meta")
@@ -52,15 +56,21 @@ train = train.join(meta, [meta.building_id_meta == train.building_id])
 train = train.join(weather, [train.timestamp == weather.timestamp_wx, train.site_id_meta == weather.site_id_wx], "left_outer")
 train = train.withColumnRenamed("site_id_meta", "site_id")
 train = train.drop("building_id_meta", "site_id_wx", "timestamp_wx")
-print("Joined row count: {0}".format(train.count()))
+print("Training joined row count: {0}".format(train.count()))
 
-print("Transforming Datasets")
+test = test.join(meta, [meta.building_id_meta == test.building_id])
+test = test.join(weather, [test.timestamp == weather.timestamp_wx, test.site_id_meta == weather.site_id_wx], "left_outer")
+test = test.withColumnRenamed("site_id_meta", "site_id")
+test = test.drop("building_id_meta", "site_id_wx", "timestamp_wx")
+print("Test joined row count: {0}".format(test.count()))
+
+print("Transforming datasets")
 train = split_timestamp(train)
-#test = transform(test)
+test = split_timestamp(test)
 
-print("Creating Tables")
+print("Creating tables")
 create_table(train, "training")
-#create_table(test, "test")
+create_table(test, "test")
 
 
 

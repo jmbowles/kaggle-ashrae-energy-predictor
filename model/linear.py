@@ -1,6 +1,8 @@
 from __future__ import print_function
 """
 0: electricity, 1: chilledwater, 2: steam, 3: hotwater
+
+spark-submit --driver-memory=20g --conf spark.dynamicAllocation.enabled=true --conf spark.shuffle.service.enabled=true
 """
 from pyspark.ml import Pipeline
 from pyspark.ml.feature import VectorAssembler, Imputer, PolynomialExpansion
@@ -12,7 +14,7 @@ import pyspark.sql.functions as F
 from pyspark.sql import SparkSession
 from pyspark.sql.types import StructType, StructField, StringType, DoubleType, IntegerType
 
-spark = SparkSession.builder.appName("LogisticRegression") \
+spark = SparkSession.builder.appName("Linear Regression Training") \
 	.config("spark.dynamicAllocation.enabled", "true") \
 	.config("spark.shuffle.service.enabled", "true") \
 	.config("spark.serializer", "org.apache.spark.serializer.KryoSerializer") \
@@ -73,7 +75,7 @@ def predict(model, test, season):
 
 def save_model(building_id, model, season):
 
-	model_path = "output/regression_model_{0}_{1}".format(building_id, season)
+	model_path = "output/linear_model_{0}_{1}".format(building_id, season)
 	model.write().overwrite().save(model_path)
 
 def train(df, months):
@@ -85,7 +87,7 @@ def train(df, months):
 	return model
 
 print("Loading all data")
-df = spark.read.table("training")
+df = spark.table("training")
 
 print("Dropping tables")
 spark.sql("drop table if exists linear_predictions")
@@ -96,13 +98,6 @@ training, test = df.randomSplit([0.8, 0.2])
 training.cache()
 test.cache()
 
-'''
-buildings = spark.read.load("../datasets/building_metadata.csv", format="csv", sep=",", inferSchema="true", header="true").select("building_id")
-
-for row in buildings.toLocalIterator():
-	building_id = row.building_id
-'''
-
 schema = StructType([StructField("building_id", IntegerType(), False), 
 			StructField("season", StringType(), False), 
 			StructField("rmse", DoubleType(), False),
@@ -111,44 +106,34 @@ schema = StructType([StructField("building_id", IntegerType(), False),
 
 season_months = {"Winter": "(12,1,2)", "Spring": "(3,4,5)", "Summer": "(6,7,8)", "Fall": "(9,10,11)"}
 
-building_id = 1368
+buildings = spark.read.load("../datasets/building_metadata.csv", format="csv", sep=",", inferSchema="true", header="true").select("building_id")
 
-for season, months in season_months.items():
-	print("Filtering training data for building: {0}".format(building_id))
-	building_df = get_building(training, building_id)
-
-	print("Applying fit for season: {0}".format(season))
-	model = train(building_df, months)
-
-	print("Saving model")
-	save_model(building_id, model, season)
+for row in buildings.toLocalIterator():
 	
-	print("Filtering test data for building: {0}".format(building_id))
-	building_df = get_building(test, building_id)
+	building_id = row.building_id
 
-	print("Predicting test data")
-	prediction = predict(model, building_df, months)
+	for season, months in season_months.items():
+		
+		print("Filtering training data for building: {0}".format(building_id))
+		building_df = get_building(training, building_id)
 
-	print("Saving predictions")
-	prediction, metrics = prediction
-	prediction.coalesce(1).write.saveAsTable("linear_predictions", format="parquet", mode="append")
-	
-	print("Saving metrics")
-	season, rmse, r2, mae = metrics
-	metric = spark.createDataFrame([(building_id, season, rmse, r2, mae)], schema)
-	metric.coalesce(1).write.saveAsTable("linear_predictions_metrics", format="parquet", mode="append")
-	
-predictions = spark.read.table("linear_predictions")
-predictions = predictions.withColumn("avg_fahrenheit", F.expr("round(air_temperature_est * 1.8 + 32, 1)"))
-predictions = predictions.withColumn("prediction", F.when(predictions.prediction < 0, 0).otherwise(predictions.prediction))
-predictions = predictions.select("building_id", "timestamp", "site_id", "avg_fahrenheit", "meter", "meter_reading", "prediction").orderBy("timestamp")
-predictions.show()
+		print("Applying fit for season: {0}".format(season))
+		model = train(building_df, months)
 
-metrics = spark.read.table("linear_predictions_metrics")
-metrics.show()
+		print("Saving model")
+		save_model(building_id, model, season)
+		
+		print("Filtering test data for building: {0}".format(building_id))
+		building_df = get_building(test, building_id)
 
+		print("Predicting test data")
+		prediction = predict(model, building_df, months)
 
-
-
-
-
+		print("Saving predictions")
+		prediction, metrics = prediction
+		prediction.coalesce(1).write.saveAsTable("linear_predictions", format="parquet", mode="append")
+		
+		print("Saving metrics")
+		season, rmse, r2, mae = metrics
+		metric = spark.createDataFrame([(building_id, season, rmse, r2, mae)], schema)
+		metric.coalesce(1).write.saveAsTable("linear_predictions_metrics", format="parquet", mode="append")
