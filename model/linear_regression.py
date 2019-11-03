@@ -10,6 +10,7 @@ from pyspark.ml.tuning import CrossValidator, ParamGridBuilder
 
 import pyspark.sql.functions as F
 from pyspark.sql import SparkSession
+from pyspark.sql.types import StructType, StructField, StringType, DoubleType, IntegerType
 
 spark = SparkSession.builder.appName("LogisticRegression") \
 	.config("spark.dynamicAllocation.enabled", "true") \
@@ -86,6 +87,10 @@ def train(df, months):
 print("Loading all data")
 df = spark.read.table("training")
 
+print("Dropping tables")
+spark.sql("drop table if exists linear_predictions")
+spark.sql("drop table if exists linear_predictions_metrics")
+
 print("Caching splits")
 training, test = df.randomSplit([0.8, 0.2])
 training.cache()
@@ -98,8 +103,13 @@ for row in buildings.toLocalIterator():
 	building_id = row.building_id
 '''
 
+schema = StructType([StructField("building_id", IntegerType(), False), 
+			StructField("season", StringType(), False), 
+			StructField("rmse", DoubleType(), False),
+			StructField("r2", DoubleType(), False),
+			StructField("mae", DoubleType(), False)])
+
 season_months = {"Winter": "(12,1,2)", "Spring": "(3,4,5)", "Summer": "(6,7,8)", "Fall": "(9,10,11)"}
-results = []
 
 building_id = 1368
 
@@ -118,27 +128,24 @@ for season, months in season_months.items():
 
 	print("Predicting test data")
 	prediction = predict(model, building_df, months)
-	results.append(prediction)
 
-predictions = spark.createDataFrame((), results[0][0].schema)
-
-for result in results:
-	prediction, evaluation = result
-	predictions = predictions.union(prediction)
-	season, rmse, r2, mae = evaluation
-	print("Season {0}:  RMSE, R2, MAE: {1}, {2}, {3}".format(season, rmse, r2, mae))
-
+	print("Saving predictions")
+	prediction, metrics = prediction
+	prediction.coalesce(1).write.saveAsTable("linear_predictions", format="parquet", mode="append")
+	
+	print("Saving metrics")
+	season, rmse, r2, mae = metrics
+	metric = spark.createDataFrame([(building_id, season, rmse, r2, mae)], schema)
+	metric.coalesce(1).write.saveAsTable("linear_predictions_metrics", format="parquet", mode="append")
+	
+predictions = spark.read.table("linear_predictions")
 predictions = predictions.withColumn("avg_fahrenheit", F.expr("round(air_temperature_est * 1.8 + 32, 1)"))
 predictions = predictions.withColumn("prediction", F.when(predictions.prediction < 0, 0).otherwise(predictions.prediction))
 predictions = predictions.select("building_id", "timestamp", "site_id", "avg_fahrenheit", "meter", "meter_reading", "prediction").orderBy("timestamp")
+predictions.show()
 
-'''
-print("Saving Model")
-model.write().overwrite().save(model_path)
-
-print("Saving Predictions")
-predictions.coalesce(1).write.saveAsTable("linear_predictions", format="parquet", mode="overwrite")
-'''
+metrics = spark.read.table("linear_predictions_metrics")
+metrics.show()
 
 
 
