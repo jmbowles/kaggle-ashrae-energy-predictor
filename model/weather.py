@@ -58,8 +58,15 @@ train = train.withColumnRenamed("site_id_meta", "site_id")
 train = train.drop("building_id_meta", "site_id_wx", "timestamp_wx")
 print("Training joined row count: {0}".format(train.count()))
 
+
+weather_test = spark.read.load("../datasets/weather_test.csv", format="csv", sep=",", inferSchema="true", header="true")
+weather_test = weather_test.dropDuplicates(["site_id", "timestamp"])
+weather_test = weather_test.withColumnRenamed("timestamp", "timestamp_wx")
+weather_test = weather_test.withColumnRenamed("site_id", "site_id_wx")
+print("Weather test row count: {0}".format(weather_test.count()))
+
 test = test.join(meta, [meta.building_id_meta == test.building_id])
-test = test.join(weather, [test.timestamp == weather.timestamp_wx, test.site_id_meta == weather.site_id_wx], "left_outer")
+test = test.join(weather_test, [test.timestamp == weather_test.timestamp_wx, test.site_id_meta == weather_test.site_id_wx], "left_outer")
 test = test.withColumnRenamed("site_id_meta", "site_id")
 test = test.drop("building_id_meta", "site_id_wx", "timestamp_wx")
 print("Test joined row count: {0}".format(test.count()))
