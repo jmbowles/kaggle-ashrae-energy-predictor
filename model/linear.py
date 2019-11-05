@@ -173,7 +173,7 @@ schema = StructType([StructField("building_id", IntegerType(), False),
 season_months = {"Winter": "(12,1,2)", "Spring": "(3,4,5)", "Summer": "(6,7,8)", "Fall": "(9,10,11)"}
 
 
-starting_building = 403
+starting_building = 420
 save_existing_predictions(starting_building)
 buildings = load_buildings(starting_building)
 
@@ -185,6 +185,7 @@ for row in buildings.toLocalIterator():
 		
 		print("Filtering training data for building: {0}".format(building_id))
 		training_building = get_building(training, building_id)
+		building_id = training_building.select("building_id").distinct().take(1)[0].building_id
 
 		print("Applying fit for season: {0}".format(season))
 		model = train(training_building, building_id, months)
@@ -208,24 +209,25 @@ for row in buildings.toLocalIterator():
 		metric.coalesce(1).write.saveAsTable("linear_predictions_metrics", format="parquet", mode="append")
 
 '''
-building_id = 40
+building_id = 420
 
 for season, months in season_months.items():
 	
 	print("Filtering training data for building: {0}".format(building_id))
-	building_df = get_building(training, building_id)
+	training_building = get_building(training, building_id)
+	building_id = training_building.select("building_id").distinct().take(1)[0].building_id
 
 	print("Applying fit for season: {0}".format(season))
-	model = train(building_df, months)
+	model = train(training_building, building_id, months)
 
 	print("Saving model")
 	save_model(building_id, model, season)
 	
 	print("Filtering test data for building: {0}".format(building_id))
-	building_df = get_building(test, building_id)
+	test_building = get_building(test, building_id)
 
 	print("Predicting test data")
-	prediction = predict(model, building_df, months)
+	prediction = predict(model, test_building, building_id, months)
 
 	print("Saving predictions")
 	prediction, metrics = prediction
@@ -235,5 +237,6 @@ for season, months in season_months.items():
 	season, rmse, r2, mae = metrics
 	metric = spark.createDataFrame([(building_id, season, rmse, r2, mae)], schema)
 	metric.coalesce(1).write.saveAsTable("linear_predictions_metrics", format="parquet", mode="append")
-	
 '''
+	
+
