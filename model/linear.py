@@ -63,7 +63,9 @@ def make_season(year, building_id, months):
 	season = season.withColumn("hour", F.hour(season.timestamp))
 	season = season.withColumn("meter_reading", F.lit(1.0))
 	season = season.drop("dates", "date", "hours", "exploded_hour")
-	season.coalesce(1).write.saveAsTable("missing_data", format="parquet", mode="overwrite")
+
+	# Dataframe must be saved prior to joining to prevent implicit cartesian join exception, even though that's not the case
+	season.coalesce(1).write.saveAsTable("missing_data", format="parquet", mode="append")
 	season = spark.table("missing_data")
 
 	meta = spark.read.load("../datasets/building_metadata.csv", format="csv", sep=",", inferSchema="true", header="true")
