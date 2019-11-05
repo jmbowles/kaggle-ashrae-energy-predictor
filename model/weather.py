@@ -58,7 +58,6 @@ train = train.withColumnRenamed("site_id_meta", "site_id")
 train = train.drop("building_id_meta", "site_id_wx", "timestamp_wx")
 print("Training joined row count: {0}".format(train.count()))
 
-
 weather_test = spark.read.load("../datasets/weather_test.csv", format="csv", sep=",", inferSchema="true", header="true")
 weather_test = weather_test.dropDuplicates(["site_id", "timestamp"])
 weather_test = weather_test.withColumnRenamed("timestamp", "timestamp_wx")
