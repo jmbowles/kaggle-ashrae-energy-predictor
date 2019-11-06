@@ -41,17 +41,8 @@ def load_buildings(building_id=None):
 	else:
 		return df
 
-def make_season(year, building_id, months):
+def create_series(season, building_id):
 
-	from ast import literal_eval
-
-	months_tuple = literal_eval(months)
-	start_date = min(months_tuple)
-	end_date = max(months_tuple)
-
-	sql = "SELECT sequence(to_date('{0}-{1}-01'), to_date('{0}-{2}-31'), interval 1 day) as dates".format(year, start_date, end_date)
-
-	season = spark.sql(sql)
 	season = season.withColumn("date", F.explode(season.dates))
 	season = season.withColumn("hours", F.sequence(F.lit(0), F.lit(23)))
 	season = season.withColumn("exploded_hour", F.explode(season.hours))
@@ -64,7 +55,37 @@ def make_season(year, building_id, months):
 	season = season.withColumn("meter_reading", F.lit(1.0))
 	season = season.drop("dates", "date", "hours", "exploded_hour")
 
+	return season
+
+
+def make_season(year, building_id, months):
+
+	from ast import literal_eval
+
+	print("Making season for building {0}, months: {1}".format(building_id, months))
+	months_tuple = literal_eval(months)
+	start_month = min(months_tuple)
+	end_month = max(months_tuple)
+
+	season = None
+
+	if start_month == 1 and end_month == 12:
+
+		sql = "SELECT sequence(to_date('{0}-{1}-01'), to_date('{0}-{2}-25'), interval 1 day) as dates".format(year, 1, 2)
+		jan_feb = spark.sql(sql)
+		jan_feb = create_series(jan_feb, building_id)
+
+		sql = "SELECT sequence(to_date('{0}-{1}-01'), to_date('{0}-{2}-25'), interval 1 day) as dates".format(year, 12, 12)
+		december = spark.sql(sql)
+		december = create_series(december, building_id)
+		season = jan_feb.union(december)
+	else:
+		sql = "SELECT sequence(to_date('{0}-{1}-01'), to_date('{0}-{2}-25'), interval 1 day) as dates".format(year, start_month, end_month)
+		season = spark.sql(sql)
+		season = create_series(season, building_id)
+
 	# Dataframe must be saved prior to joining to prevent implicit cartesian join exception, even though that's not the case
+	print("Saving missing data for building {0}".format(building_id))
 	season.coalesce(1).write.saveAsTable("missing_data", format="parquet", mode="append")
 	season = spark.table("missing_data")
 
@@ -78,6 +99,7 @@ def make_season(year, building_id, months):
 	weather = weather.withColumnRenamed("timestamp", "timestamp_wx")
 	weather = weather.withColumnRenamed("site_id", "site_id_wx")
 
+	print("Joining data for building {0}".format(building_id))
 	season = season.join(meta, [meta.building_id_meta == season.building_id])
 	season = season.join(weather, [season.timestamp == weather.timestamp_wx, season.site_id_meta == weather.site_id_wx], "left_outer")
 	season = season.withColumnRenamed("site_id_meta", "site_id")
@@ -172,7 +194,6 @@ schema = StructType([StructField("building_id", IntegerType(), False),
 
 season_months = {"Winter": "(12,1,2)", "Spring": "(3,4,5)", "Summer": "(6,7,8)", "Fall": "(9,10,11)"}
 
-
 starting_building = 420
 save_existing_predictions(starting_building)
 buildings = load_buildings(starting_building)
@@ -185,7 +206,6 @@ for row in buildings.toLocalIterator():
 		
 		print("Filtering training data for building: {0}".format(building_id))
 		training_building = get_building(training, building_id)
-		building_id = training_building.select("building_id").distinct().take(1)[0].building_id
 
 		print("Applying fit for season: {0}".format(season))
 		model = train(training_building, building_id, months)
@@ -215,7 +235,6 @@ for season, months in season_months.items():
 	
 	print("Filtering training data for building: {0}".format(building_id))
 	training_building = get_building(training, building_id)
-	building_id = training_building.select("building_id").distinct().take(1)[0].building_id
 
 	print("Applying fit for season: {0}".format(season))
 	model = train(training_building, building_id, months)
@@ -238,5 +257,6 @@ for season, months in season_months.items():
 	metric = spark.createDataFrame([(building_id, season, rmse, r2, mae)], schema)
 	metric.coalesce(1).write.saveAsTable("linear_predictions_metrics", format="parquet", mode="append")
 '''
+
 	
 
