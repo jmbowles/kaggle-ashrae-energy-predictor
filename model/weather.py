@@ -8,7 +8,6 @@ from pyspark.sql import SparkSession
 spark = SparkSession.builder.appName("TransformFeatures") \
 	.config("spark.dynamicAllocation.enabled", "true") \
 	.config("spark.shuffle.service.enabled", "true") \
-	.config("spark.serializer", "org.apache.spark.serializer.KryoSerializer") \
 	.enableHiveSupport() \
 	.getOrCreate()
 
@@ -38,7 +37,6 @@ train.cache()
 print("Training dataset row count: {0}".format(train.count()))
 
 test = spark.read.load("../datasets/test.csv", format="csv", sep=",", inferSchema="true", header="true")
-test = test.dropDuplicates(["building_id", "meter", "timestamp"])
 test.cache()
 print("Test dataset row count: {0}".format(test.count()))
 

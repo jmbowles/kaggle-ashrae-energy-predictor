@@ -23,6 +23,15 @@ def get_building(df, building_id):
 
 	return df.where(F.expr("building_id = {0}".format(building_id)))
 
+def get_buildings(building_id=None):
+
+	df = spark.read.load("../datasets/building_metadata.csv", format="csv", sep=",", inferSchema="true", header="true").select("building_id").orderBy("building_id")
+
+	if building_id:
+		return df.where(df.building_id == building_id).orderBy("building_id")
+	else:
+		return df
+
 def fit(df):
 
 	cols = ["air_temperature_est", "dew_temperature_est", "wind_speed_est", "meter", "month", "day", "hour"]
@@ -35,8 +44,8 @@ def fit(df):
 
 	params = ParamGridBuilder() \
 				.addGrid(imputer.strategy, ["mean", "median"]) \
-				.addGrid(poly.degree, [3]) \
-				.addGrid(regression.maxIter, [20]) \
+				.addGrid(poly.degree, [2]) \
+				.addGrid(regression.maxIter, [30]) \
 				.build()
 
 	validator = CrossValidator(estimator=pipeline, estimatorParamMaps=params, evaluator=evaluator, numFolds=3, seed=51)
@@ -47,6 +56,7 @@ def fit(df):
 def predict(model, test, building_id):
 	
 	predictions = model.transform(test)
+	predictions = predictions.withColumn("prediction", F.when(predictions.prediction < 0, F.lit(0.0)).otherwise(predictions.prediction))
 	
 	evaluator = RegressionEvaluator(labelCol="meter_reading", predictionCol="prediction", metricName="rmse")
 	rmse = evaluator.evaluate(predictions, {evaluator.metricName: "rmse"})
@@ -59,12 +69,6 @@ def save_model(building_id, model):
 
 	model_path = "output/gbt_model_{0}".format(building_id)
 	model.write().overwrite().save(model_path)
-
-def train(df):
-
-	model = fit(df)
-
-	return model
 
 
 print("Loading all data")
@@ -80,39 +84,43 @@ training, test = df.randomSplit([0.8, 0.2])
 training.cache()
 test.cache()
 
-building_id = 1390
+buildings = get_buildings(None)
 
-print("Filtering training data for building: {0}".format(building_id))
-building = get_building(training, building_id)
+for row in buildings.toLocalIterator():
+	
+	building_id = row.building_id
 
-print("Applying fit for building: {0}".format(building_id))
-model = train(building)
+	print("Filtering training data for building: {0}".format(building_id))
+	building = get_building(training, building_id)
 
-print("Saving model")
-save_model(building_id, model)
+	print("Applying fit for building: {0}".format(building_id))
+	model = fit(building)
 
-print("Filtering test data for building: {0}".format(building_id))
-test_building = get_building(test, building_id)
+	print("Saving model")
+	save_model(building_id, model)
 
-print("Predicting test data")
-prediction = predict(model, test_building, building_id)
+	print("Filtering test data for building: {0}".format(building_id))
+	test_building = get_building(test, building_id)
 
-print("Saving predictions")
-prediction, metrics = prediction
-prediction.select("timestamp", "meter_reading", "prediction").show()
-prediction.coalesce(1).write.saveAsTable("gbt_predictions", format="parquet", mode="append")
+	print("Predicting test data")
+	prediction = predict(model, test_building, building_id)
 
-print("Saving metrics")
+	print("Saving predictions")
+	prediction, metrics = prediction
+	#prediction.select("timestamp", "meter_reading", "prediction").show()
+	prediction.coalesce(1).write.saveAsTable("gbt_predictions", format="parquet", mode="append")
 
-schema = StructType([StructField("building_id", IntegerType(), False), 
-			StructField("rmse", DoubleType(), False),
-			StructField("r2", DoubleType(), False),
-			StructField("mae", DoubleType(), False)])
+	print("Saving metrics")
 
-rmse, r2, mae = metrics
-print("RMSE, R2, MAE: {0}, {1}, {2}".format(rmse, r2, mae))
-metric = spark.createDataFrame([(building_id, rmse, r2, mae)], schema)
-metric.coalesce(1).write.saveAsTable("gbt_predictions_metrics", format="parquet", mode="append")
+	schema = StructType([StructField("building_id", IntegerType(), False), 
+				StructField("rmse", DoubleType(), False),
+				StructField("r2", DoubleType(), False),
+				StructField("mae", DoubleType(), False)])
+
+	rmse, r2, mae = metrics
+	#print("RMSE, R2, MAE: {0}, {1}, {2}".format(rmse, r2, mae))
+	metric = spark.createDataFrame([(building_id, rmse, r2, mae)], schema)
+	metric.coalesce(1).write.saveAsTable("gbt_predictions_metrics", format="parquet", mode="append")
 
 
 	
