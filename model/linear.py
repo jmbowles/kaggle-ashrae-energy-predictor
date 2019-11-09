@@ -15,7 +15,6 @@ from pyspark.sql import SparkSession
 from pyspark.sql.types import StructType, StructField, StringType, DoubleType, IntegerType
 
 spark = SparkSession.builder.appName("Linear Regression Training") \
-	.config("spark.serializer", "org.apache.spark.serializer.KryoSerializer") \
 	.enableHiveSupport() \
 	.getOrCreate()
 

@@ -12,6 +12,10 @@ spark = SparkSession.builder.appName("TransformFeatures") \
 	.enableHiveSupport() \
 	.getOrCreate()
 
+def to_gmt(df):
+
+	return df.withColumn("timestamp", F.to_utc_timestamp("timestamp", df.time_zone))
+
 def split_timestamp(df):
 
 	df = df.withColumn("month", F.month(df.timestamp))
@@ -38,7 +42,7 @@ test = test.dropDuplicates(["building_id", "meter", "timestamp"])
 test.cache()
 print("Test dataset row count: {0}".format(test.count()))
 
-meta = spark.read.load("../datasets/building_metadata.csv", format="csv", sep=",", inferSchema="true", header="true")
+meta = spark.read.load("../datasets/building_metadata_tz.csv", format="csv", sep=",", inferSchema="true", header="true")
 meta = meta.withColumnRenamed("building_id", "building_id_meta")
 meta = meta.withColumnRenamed("site_id", "site_id_meta")
 print("Metadata row count: {0}".format(meta.count()))
@@ -53,6 +57,7 @@ print("Weather row count: {0}".format(weather.count()))
 #weather.where(F.expr("site_id_wx = 2 and month(timestamp_wx) = 1")).withColumn("month_wx", F.month(weather.timestamp_wx)).withColumn("day_wx", F.dayofmonth(weather.timestamp_wx)).groupby("site_id_wx", "month_wx", "day_wx").agg(F.avg(weather.air_temperature).alias("avg_celsius")).withColumn("avg_fahrenheit", F.expr("avg_celsius * 1.8 + 32")).orderBy("day_wx").show(50)
 
 train = train.join(meta, [meta.building_id_meta == train.building_id])
+train = to_gmt(train)
 train = train.join(weather, [train.timestamp == weather.timestamp_wx, train.site_id_meta == weather.site_id_wx], "left_outer")
 train = train.withColumnRenamed("site_id_meta", "site_id")
 train = train.drop("building_id_meta", "site_id_wx", "timestamp_wx")
@@ -65,6 +70,7 @@ weather_test = weather_test.withColumnRenamed("site_id", "site_id_wx")
 print("Weather test row count: {0}".format(weather_test.count()))
 
 test = test.join(meta, [meta.building_id_meta == test.building_id])
+test = to_gmt(test)
 test = test.join(weather_test, [test.timestamp == weather_test.timestamp_wx, test.site_id_meta == weather_test.site_id_wx], "left_outer")
 test = test.withColumnRenamed("site_id_meta", "site_id")
 test = test.drop("building_id_meta", "site_id_wx", "timestamp_wx")
