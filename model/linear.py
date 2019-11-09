@@ -194,7 +194,7 @@ schema = StructType([StructField("building_id", IntegerType(), False),
 
 season_months = {"Winter": "(12,1,2)", "Spring": "(3,4,5)", "Summer": "(6,7,8)", "Fall": "(9,10,11)"}
 
-starting_building = 420
+starting_building = 1436
 save_existing_predictions(starting_building)
 buildings = load_buildings(starting_building)
 

@@ -11,7 +11,6 @@ from pyspark.sql import SparkSession
 spark = SparkSession.builder.appName("Linear Regression Submittal") \
 	.config("spark.dynamicAllocation.enabled", "true") \
 	.config("spark.shuffle.service.enabled", "true") \
-	.config("spark.serializer", "org.apache.spark.serializer.KryoSerializer") \
 	.enableHiveSupport() \
 	.getOrCreate()
 
