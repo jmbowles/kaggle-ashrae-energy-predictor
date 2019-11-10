@@ -1,0 +1,8 @@
+gcloud beta compute --project "kaggle-ashrae-258520" ssh --zone "us-central1-a" "spark-cluster-m"
+gcloud beta compute scp --project "kaggle-ashrae-258520" --zone "us-central1-a" linear.py spark-cluster-m:~ 
+
+
+gcloud beta compute scp --project "kaggle-ashrae-258520" --zone "us-central1-a" ~/.kaggle/kaggle.json  spark-cluster-m:~/.kaggle
+kaggle.json
+
+PATH=$PATH:/home/alloc_init_self_gmail_com/.local/bin

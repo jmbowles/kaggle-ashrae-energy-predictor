@@ -28,7 +28,7 @@ def get_buildings(building_id=None):
 	df = spark.read.load("../datasets/building_metadata.csv", format="csv", sep=",", inferSchema="true", header="true").select("building_id").orderBy("building_id")
 
 	if building_id:
-		return df.where(df.building_id == building_id).orderBy("building_id")
+		return df.where(df.building_id >= building_id).orderBy("building_id")
 	else:
 		return df
 
@@ -70,21 +70,30 @@ def save_model(building_id, model):
 	model_path = "output/gbt_model_{0}".format(building_id)
 	model.write().overwrite().save(model_path)
 
+def save_existing_predictions(building_id):
+
+	temp = spark.sql("select * from gbt_predictions where building_id < {0}".format(building_id))
+	temp.coalesce(1).write.saveAsTable("gbt_predictions_temp", format="parquet", mode="append")
+	spark.sql("drop table gbt_predictions")
+	spark.sql("alter table gbt_predictions_temp rename to gbt_predictions")
+
 
 print("Loading all data")
 df = spark.table("training")
 df = df.withColumn("meter_reading", F.when(df.meter_reading == 0, F.lit(1.0)).otherwise(df.meter_reading))
 
-print("Dropping tables")
-spark.sql("drop table if exists gbt_predictions")
-spark.sql("drop table if exists gbt_predictions_metrics")
+#print("Dropping tables")
+#spark.sql("drop table if exists gbt_predictions")
+#spark.sql("drop table if exists gbt_predictions_metrics")
 
 print("Caching splits")
 training, test = df.randomSplit([0.8, 0.2])
 training.cache()
 test.cache()
 
-buildings = get_buildings(None)
+starting_building = 1020
+save_existing_predictions(starting_building)
+buildings = get_buildings(starting_building)
 
 for row in buildings.toLocalIterator():
 	
@@ -118,7 +127,7 @@ for row in buildings.toLocalIterator():
 				StructField("mae", DoubleType(), False)])
 
 	rmse, r2, mae = metrics
-	#print("RMSE, R2, MAE: {0}, {1}, {2}".format(rmse, r2, mae))
+	print("RMSE, R2, MAE: {0}, {1}, {2}".format(rmse, r2, mae))
 	metric = spark.createDataFrame([(building_id, rmse, r2, mae)], schema)
 	metric.coalesce(1).write.saveAsTable("gbt_predictions_metrics", format="parquet", mode="append")
 
