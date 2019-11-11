@@ -1,8 +1,18 @@
+https://cloud.google.com/sdk/gcloud/reference/dataproc/jobs/submit/
+https://cloud.google.com/sdk/gcloud/reference/dataproc/jobs/submit/pyspark
+
+gcloud dataproc jobs submit pyspark --cluster spark-cluster --region us-central1 weather.py
 gcloud beta compute --project "kaggle-ashrae-258520" ssh --zone "us-central1-a" "spark-cluster-m"
 gcloud beta compute scp --project "kaggle-ashrae-258520" --zone "us-central1-a" linear.py spark-cluster-m:~ 
 
 
-gcloud beta compute scp --project "kaggle-ashrae-258520" --zone "us-central1-a" ~/.kaggle/kaggle.json  spark-cluster-m:~/.kaggle
-kaggle.json
+gcloud beta compute scp --project "kaggle-ashrae-258520" --zone "us-central1-a" ~/.kaggle/kaggle.json  spark-cluster-m:~/.kaggle/kaggle.json
 
 PATH=$PATH:/home/alloc_init_self_gmail_com/.local/bin
+
+
+kaggle competitions download -c ashrae-energy-prediction
+
+
+
+gcloud dataproc jobs submit pyspark gbt.py --cluster spark-cluster --region us-central1 -- --conf spark.default.parallelism=20 -- --conf spark.dynamicAllocation.enabled=true -- --conf spark.shuffle.service.enabled=true
