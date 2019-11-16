@@ -132,5 +132,21 @@ for row in buildings.toLocalIterator():
 	metric.coalesce(1).write.saveAsTable("gbt_predictions_metrics", format="parquet", mode="append")
 
 
+cols ["timestamp", "building_id", "air_temperature", "dew_temperature", "meter", "meter_reading", "prediction", "log_squared_error"]
+
+p = spark.table("gbt_predictions")
+p = p.withColumn("log_squared_error", F.pow(F.log(p.prediction + 1) - F.log(p.meter_reading + 1), 2)).select(*cols).orderBy("building_id", "timestamp")
+p.show()
+
+import math
+
+log_squared_error = p.agg(F.sum("log_squared_error").alias("lse")).collect()[0]["lse"]
+rmsle = math.sqrt(log_squared_error / p.count())
+print("RMSLE: {0}".format(rmsle))
+
+
+
+
+
 	
 
