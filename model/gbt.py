@@ -135,7 +135,7 @@ for row in buildings.toLocalIterator():
 RMSLE = 0.88 is based upon 939 / 1449 buildings (buildings 510 - 1448, zero-based index). Made a mistake by dropping gbt_predictions
 for buildings 0 - 509 after restarting job due to memory issues
 """
-cols ["timestamp", "building_id", "air_temperature", "dew_temperature", "meter", "meter_reading", "prediction", "log_squared_error"]
+cols = ["timestamp", "building_id", "air_temperature_est", "dew_temperature_est", "meter", "meter_reading", "prediction", "log_squared_error"]
 
 p = spark.table("gbt_predictions")
 p = p.withColumn("log_squared_error", F.pow(F.log(p.prediction + 1) - F.log(p.meter_reading + 1), 2)).select(*cols).orderBy("building_id", "timestamp")
