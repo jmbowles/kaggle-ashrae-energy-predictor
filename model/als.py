@@ -34,7 +34,6 @@ def get_buildings(building_id=None):
 
 def fit(df):
 
-	#temperature_splits = [-float("inf"), -23.0, -18.0, -13.0, -8.0, -3.0, 2.0, 7.0, 12.0, 17.0, 22.0, 27.0, 32.0, 37.0, float("inf")]
 	day_splits = [-float("inf"), 2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0, 22.0, 24.0, 26.0, 28.0, float("inf")]
 	bucketizer = Bucketizer(splits=day_splits, inputCol="day", outputCol="bucket", handleInvalid="error")
 	
@@ -67,16 +66,16 @@ def predict(model, test, building_id):
 
 def save_model(building_id, model):
 
-	model_path = "output/als_test_model_{0}".format(building_id)
+	model_path = "output/als_model_{0}".format(building_id)
 	model.write().overwrite().save(model_path)
 
 def save_existing_predictions(building_id):
 
 	if not None:
-		temp = spark.sql("select * from als_test_predictions where building_id < {0}".format(building_id))
-		temp.coalesce(1).write.saveAsTable("als_test_predictions_temp", format="parquet", mode="append")
-		spark.sql("drop table als_test_predictions")
-		spark.sql("alter table als_test_predictions_temp rename to als_predictions")
+		temp = spark.sql("select * from als_predictions where building_id < {0}".format(building_id))
+		temp.coalesce(1).write.saveAsTable("als_predictions_temp", format="parquet", mode="append")
+		spark.sql("drop table als_predictions")
+		spark.sql("alter table als_predictions_temp rename to als_predictions")
 
 
 print("Loading all data")
@@ -86,8 +85,8 @@ df = df.dropna(how="all", subset="air_temperature")
 df = df.withColumn("air_temperature", df.air_temperature.cast("integer"))
 
 print("Dropping tables")
-spark.sql("drop table if exists als_test_predictions")
-spark.sql("drop table if exists als_test_predictions_metrics")
+spark.sql("drop table if exists als_predictions")
+spark.sql("drop table if exists als_predictions_metrics")
 
 print("Caching splits")
 training, test = df.randomSplit([0.8, 0.2])
@@ -122,7 +121,7 @@ for row in buildings.toLocalIterator():
 
 	print("Saving predictions")
 	prediction, metrics = prediction
-	prediction.coalesce(1).write.saveAsTable("als_test_predictions", format="parquet", mode="append")
+	prediction.coalesce(1).write.saveAsTable("als_predictions", format="parquet", mode="append")
 
 	print("Saving metrics")
 
@@ -134,13 +133,13 @@ for row in buildings.toLocalIterator():
 	rmse, r2, mae = metrics
 	print("RMSE, R2, MAE: {0}, {1}, {2}".format(rmse, r2, mae))
 	metric = spark.createDataFrame([(building_id, rmse, r2, mae)], schema)
-	metric.coalesce(1).write.saveAsTable("als_test_predictions_metrics", format="parquet", mode="append")
+	metric.coalesce(1).write.saveAsTable("als_predictions_metrics", format="parquet", mode="append")
 
 
 cols = ["timestamp", "building_id", "meter", "meter_reading", "prediction", "log_squared_error"]
 
 print("Predictions")
-p = spark.table("als_test_predictions")
+p = spark.table("als_predictions")
 p = p.withColumn("log_squared_error", F.pow(F.log(p.prediction + 1) - F.log(p.meter_reading + 1), 2)).select(*cols).orderBy("building_id", "timestamp")
 p.show()
 
