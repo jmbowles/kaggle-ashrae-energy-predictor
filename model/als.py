@@ -20,8 +20,8 @@ spark = SparkSession.builder.appName("ALS Training") \
 
 
 def get_building(df, building_id, meter):
-	#return df.where(F.expr("building_id = {0} and meter = {1}".format(building_id, meter)))
-	return df.where(F.expr("building_id = {0}".format(building_id)))
+	
+	return df.where(F.expr("building_id = {0} and meter = {1}".format(building_id, meter)))
 
 def get_buildings(building_id=None):
 
@@ -34,17 +34,22 @@ def get_buildings(building_id=None):
 
 def fit(df):
 
-	splits = [-float("inf"), -28.0, -23.0, -18.0, -13.0, -8.0, -3.0, 2.0, 7.0, 12.0, 17.0, 22.0, 27.0, 32.0, 37.0, 42.0, 47.0, float("inf")]
-	#splits = [-float("inf"), 5.0, 10.0, 15.0, 20.0, 25.0, 30.0, 35.0, float("inf")]
-	bucketizer = Bucketizer(splits=splits, inputCol="air_temperature", outputCol="air_temp_bucket", handleInvalid="error")
 	
-	als = ALS(userCol="unix_ts", itemCol="air_temp_bucket", ratingCol="meter_reading")
+	#month_day_hour = [-float("inf"), 2.0, 57.0, 59.0, 62.0, 65.0, float("inf")]
+	#hour = [-float("inf"), 3.0, 9.0, 13.0, 17.0, 21.0, 23.0, float("inf")]
+	temperature_splits = [-float("inf"), -23.0, -18.0, -13.0, -8.0, -3.0, 2.0, 7.0, 12.0, 17.0, 22.0, 27.0, 32.0, 37.0, float("inf")]
+	#temperature_splits = [-float("inf"), -28.0, -23.0, -18.0, -13.0, -8.0, -3.0, 2.0, 7.0, 12.0, 17.0, 22.0, 27.0, 32.0, 37.0, 42.0, 47.0, float("inf")]
+	#temperature_splits = [-float("inf"), 5.0, 10.0, 15.0, 20.0, 25.0, float("inf")]
+	#bucketizer = Bucketizer(splits=temperature_splits, inputCol="air_temperature", outputCol="air_temp_bucket", handleInvalid="error")
+	bucketizer = Bucketizer(splits=temperature_splits, inputCol="items", outputCol="bucket", handleInvalid="error")
+	
+	als = ALS(userCol="users", itemCol="bucket", ratingCol="meter_reading")
 	pipeline = Pipeline(stages=[bucketizer, als])
 	evaluator = RegressionEvaluator(labelCol="meter_reading", predictionCol="prediction", metricName="rmse")
 
 	params = ParamGridBuilder() \
 				.addGrid(als.rank, [10]) \
-				.addGrid(als.alpha, [1.0]) \
+				.addGrid(als.maxIter, [10.0]) \
 				.addGrid(als.nonnegative, [False]) \
 				.build()
 
@@ -56,6 +61,7 @@ def fit(df):
 def predict(model, test, building_id):
 	
 	predictions = model.transform(test)
+	predictions = predictions.withColumn("prediction", F.when(predictions.prediction < 0, F.lit(0.0)).otherwise(predictions.prediction))
 	
 	evaluator = RegressionEvaluator(labelCol="meter_reading", predictionCol="prediction", metricName="rmse")
 	rmse = evaluator.evaluate(predictions, {evaluator.metricName: "rmse"})
@@ -80,10 +86,11 @@ def save_existing_predictions(building_id):
 
 print("Loading all data")
 df = spark.table("training")
-df = df.withColumn("unix_ts", F.unix_timestamp(df.timestamp))
-df = df.dropna(thresh=0, subset="meter_reading")
+#df = df.dropna(thresh=0, subset="meter_reading")
 df = df.dropna(how="all", subset="air_temperature")
 df = df.withColumn("air_temperature", df.air_temperature.cast("integer"))
+df = df.withColumn("users",  df.month)
+df = df.withColumn("items", df.air_temperature)
 
 print("Dropping tables")
 spark.sql("drop table if exists als_predictions")
@@ -94,8 +101,10 @@ training, test = df.randomSplit([0.8, 0.2])
 training.cache()
 test.cache()
 
+#training.crosstab("building_id", "meter").withColumnRenamed("building_id_meter", "building_id").withColumn("building_id", F.col("building_id").cast("integer")).orderBy("building_id").show()
+
 starting_building = 1390
-meter = 0
+meter = 1
 #save_existing_predictions(starting_building)
 buildings = get_buildings(starting_building)
 
@@ -116,7 +125,7 @@ for row in buildings.toLocalIterator():
 	test_building = get_building(test, building_id, meter)
 
 	print("Predicting test data")
-	prediction = predict(model, building, building_id)
+	prediction = predict(model, test_building, building_id)
 
 	print("Saving predictions")
 	prediction, metrics = prediction
@@ -135,28 +144,12 @@ for row in buildings.toLocalIterator():
 	metric.coalesce(1).write.saveAsTable("als_predictions_metrics", format="parquet", mode="append")
 
 
-print("Recommendations for users")
-model_path = "output/als_model_{0}".format(starting_building)
-model = PipelineModel.load(model_path)
-als_model = model.stages[-1]
-als_model.recommendForAllUsers(6).show(truncate=False)
-
-print("Test meter readings")
-test = get_building(test, starting_building, meter)
-test.select("timestamp", "unix_ts", "meter_reading").show()
-
-print("ALS prediction on test")
-model.transform(test).select("timestamp", "unix_ts", "meter_reading", "prediction").show()
-
-
 cols = ["timestamp", "building_id", "meter", "meter_reading", "prediction", "log_squared_error"]
 
 print("Predictions")
 p = spark.table("als_predictions")
 p = p.withColumn("log_squared_error", F.pow(F.log(p.prediction + 1) - F.log(p.meter_reading + 1), 2)).select(*cols).orderBy("building_id", "timestamp")
-p = p.withColumn("unix_ts", F.unix_timestamp(p.timestamp))
-p.select("timestamp", "unix_ts", "meter_reading", "prediction").show()
-#df.where(F.expr("building_id = 1390 and meter = 0 and unix_ts in (1453316400, 1453672800, 1460444400)")).select("timestamp", "unix_ts", "meter_reading").show()
+p.show()
 
 import math
 
