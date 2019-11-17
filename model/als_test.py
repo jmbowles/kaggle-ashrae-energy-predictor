@@ -34,16 +34,11 @@ def get_buildings(building_id=None):
 
 def fit(df):
 
+	#temperature_splits = [-float("inf"), -23.0, -18.0, -13.0, -8.0, -3.0, 2.0, 7.0, 12.0, 17.0, 22.0, 27.0, 32.0, 37.0, float("inf")]
+	day_splits = [-float("inf"), 2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0, 22.0, 24.0, 26.0, 28.0, float("inf")]
+	bucketizer = Bucketizer(splits=day_splits, inputCol="day", outputCol="bucket", handleInvalid="error")
 	
-	#month_day_hour = [-float("inf"), 2.0, 57.0, 59.0, 62.0, 65.0, float("inf")]
-	#hour = [-float("inf"), 3.0, 9.0, 13.0, 17.0, 21.0, 23.0, float("inf")]
-	temperature_splits = [-float("inf"), -23.0, -18.0, -13.0, -8.0, -3.0, 2.0, 7.0, 12.0, 17.0, 22.0, 27.0, 32.0, 37.0, float("inf")]
-	#temperature_splits = [-float("inf"), -28.0, -23.0, -18.0, -13.0, -8.0, -3.0, 2.0, 7.0, 12.0, 17.0, 22.0, 27.0, 32.0, 37.0, 42.0, 47.0, float("inf")]
-	#temperature_splits = [-float("inf"), 5.0, 10.0, 15.0, 20.0, 25.0, float("inf")]
-	#bucketizer = Bucketizer(splits=temperature_splits, inputCol="air_temperature", outputCol="air_temp_bucket", handleInvalid="error")
-	bucketizer = Bucketizer(splits=temperature_splits, inputCol="items", outputCol="bucket", handleInvalid="error")
-	
-	als = ALS(userCol="users", itemCol="bucket", ratingCol="meter_reading")
+	als = ALS(userCol="month", itemCol="bucket", ratingCol="meter_reading")
 	pipeline = Pipeline(stages=[bucketizer, als])
 	evaluator = RegressionEvaluator(labelCol="meter_reading", predictionCol="prediction", metricName="rmse")
 
@@ -89,8 +84,6 @@ df = spark.table("training")
 #df = df.dropna(thresh=0, subset="meter_reading")
 df = df.dropna(how="all", subset="air_temperature")
 df = df.withColumn("air_temperature", df.air_temperature.cast("integer"))
-df = df.withColumn("users",  df.month)
-df = df.withColumn("items", df.air_temperature)
 
 print("Dropping tables")
 spark.sql("drop table if exists als_predictions")
@@ -103,7 +96,7 @@ test.cache()
 
 #training.crosstab("building_id", "meter").withColumnRenamed("building_id_meter", "building_id").withColumn("building_id", F.col("building_id").cast("integer")).orderBy("building_id").show()
 
-starting_building = 1390
+starting_building = 1352
 meter = 1
 #save_existing_predictions(starting_building)
 buildings = get_buildings(starting_building)
