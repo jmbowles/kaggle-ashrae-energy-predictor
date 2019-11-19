@@ -1,6 +1,8 @@
 from __future__ import print_function
 """
 0: electricity, 1: chilledwater, 2: steam, 3: hotwater
+kaggle competitions submit -c ashrae-energy-prediction -f submittal_2.csv -m "Submisssion 2. ALS by month (users) and day (items), rating = meter_reading"
+
 """
 from pyspark.ml import PipelineModel
 
@@ -32,7 +34,7 @@ def load_model(building_id, meter):
 	model_path = "output/als_model_{0}_{1}".format(building_id, meter)
 	return PipelineModel.load(model_path)
 
-def to_csv(submit_id):
+def to_csv(submit_id, algo):
 
 	import os
 
@@ -45,8 +47,9 @@ def to_csv(submit_id):
 	path = os.path.join(outdir, file_name)
 
 	predictions = spark.table("submitted_predictions")
-	predictions.select("row_id", "meter_reading").coalesce(1).toPandas().to_csv(path, header=True, index=False)
-	print("Total rows written to '{0}': {1}".format(file_name, predictions.count()))
+	submittal = predictions.where(predictions.algo == algo)
+	submittal.select("row_id", "meter_reading").coalesce(1).toPandas().to_csv(path, header=True, index=False)
+	print("Total rows written to '{0}': {1}".format(file_name, submittal.count()))
 
 
 print("Loading test data for prediction submittal")
@@ -81,7 +84,7 @@ for row in buildings.toLocalIterator():
 		predictions.coalesce(1).write.saveAsTable("submitted_predictions", format="parquet", mode="append")
 				
 		
-to_csv(submit_id)
+to_csv(submit_id, algo)
 
 
 
