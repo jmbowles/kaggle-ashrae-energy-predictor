@@ -39,6 +39,7 @@ def get_buildings(building_id=None):
 		return df.where(df.building_id >= building_id).orderBy("building_id")
 	else:
 		return df
+		
 def fit(df):
 
 	day_splits = [-float("inf"), 2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0, 22.0, 24.0, 26.0, 28.0, float("inf")]
