@@ -69,7 +69,7 @@ for row in buildings.toLocalIterator():
 		meter_id = row.meter
 		building_meter = get_meter(building, meter_id)
 
-		print("Predicting meter readings for building {0} meter {1}".format(building_id), meter_id)
+		print("Predicting meter readings for building {0} meter {1}".format(building_id, meter_id))
 		model = load_model(building_id, meter_id)
 		predictions = model.transform(building_meter)
 
