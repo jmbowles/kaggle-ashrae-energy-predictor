@@ -75,7 +75,7 @@ print("Caching splits")
 training, _ = df.randomSplit([0.8, 0.2])
 training.cache()
 
-starting_building = 1293
+starting_building = 11
 buildings = get_buildings(starting_building)
 
 for row in buildings.toLocalIterator():

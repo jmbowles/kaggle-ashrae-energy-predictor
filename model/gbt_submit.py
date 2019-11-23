@@ -1,6 +1,7 @@
 from __future__ import print_function
 """
 0: electricity, 1: chilledwater, 2: steam, 3: hotwater
+kaggle competitions submit -c ashrae-energy-prediction -f submittal_3.csv -m "Submisssion 3. GBTRegressor by meter"
 """
 from pyspark.ml import PipelineModel
 
@@ -18,13 +19,21 @@ spark = SparkSession.builder.appName("Linear Regression Submittal") \
 def get_building(df, building_id):
 
 	return df.where(F.expr("building_id = {0}".format(building_id)))
-	
-def load_model(building_id):
 
-	model_path = "output/gbt_model_{0}".format(building_id)
+def get_meter(df, meter):
+	
+	return df.where(F.expr("meter = {0}".format(meter)))
+
+def get_meters(df):
+
+	return df.select("meter").distinct().orderBy("meter")
+	
+def load_model(building_id, meter):
+
+	model_path = "output/gbt_model_{0}_{1}".format(building_id, meter)
 	return PipelineModel.load(model_path)
 
-def to_csv(submit_id):
+def to_csv(submit_id, algo):
 
 	import os
 
@@ -37,16 +46,17 @@ def to_csv(submit_id):
 	path = os.path.join(outdir, file_name)
 
 	predictions = spark.table("submitted_predictions")
-	predictions.select("row_id", "meter_reading").coalesce(1).toPandas().to_csv(path, header=True, index=False)
-	print("Total rows written to '{0}': {1}".format(file_name, predictions.count()))
+	submittal = predictions.where(predictions.algo == algo)
+	submittal.select("row_id", "meter_reading").coalesce(1).toPandas().to_csv(path, header=True, index=False)
+	print("Total rows written to '{0}': {1}".format(file_name, submittal.count()))
 
 
 print("Loading test data for prediction submittal")
 test = spark.table("test")
 test.cache()
 
-submit_id = 1
-algo = "gbt"
+submit_id = 3
+algo = "gbt_by_meter"
 
 buildings = spark.read.load("../datasets/building_metadata.csv", format="csv", sep=",", inferSchema="true", header="true").select("building_id")
 
@@ -56,18 +66,25 @@ for row in buildings.toLocalIterator():
 
 	print("Predicting meter readings for building {0}".format(building_id))
 	building = get_building(test, building_id)
-	model = load_model(building_id)
-	predictions = model.transform(building)
+	meters = get_meters(building)
 
-	print("Saving submission")
-	predictions = predictions.withColumn("submitted_ts", F.current_timestamp())
-	predictions = predictions.withColumn("submit_id", F.lit(submit_id))
-	predictions = predictions.withColumn("algo", F.lit(algo))
-	predictions = predictions.withColumnRenamed("prediction", "meter_reading").select("row_id", "building_id", "meter", "timestamp", "meter_reading", "submit_id", "submitted_ts", "algo")
-	predictions.coalesce(1).write.saveAsTable("submitted_predictions", format="parquet", mode="append")
-				
+	for row in meters.toLocalIterator():
+
+		meter_id = row.meter
+		building_meter = get_meter(building, meter_id)
+
+		print("Predicting meter readings for building {0} meter {1}".format(building_id, meter_id))
+		model = load_model(building_id, meter_id)
+		predictions = model.transform(building_meter)
+
+		print("Saving submission")
+		predictions = predictions.withColumn("submitted_ts", F.current_timestamp())
+		predictions = predictions.withColumn("submit_id", F.lit(submit_id))
+		predictions = predictions.withColumn("algo", F.lit(algo))
+		predictions = predictions.withColumnRenamed("prediction", "meter_reading").select("row_id", "building_id", "meter", "timestamp", "meter_reading", "submit_id", "submitted_ts", "algo")
+		predictions.coalesce(1).write.saveAsTable("submitted_predictions", format="parquet", mode="append")
 		
-to_csv(submit_id)
+to_csv(submit_id, algo)
 
 
 

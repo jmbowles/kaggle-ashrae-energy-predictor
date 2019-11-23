@@ -1,7 +1,7 @@
 from __future__ import print_function
 """
 0: electricity, 1: chilledwater, 2: steam, 3: hotwater
-kaggle competitions submit -c ashrae-energy-prediction -f submittal_2.csv -m "Submisssion 2. ALS by month (users) and day (items), rating = meter_reading"
+kaggle competitions submit -c ashrae-energy-prediction -f submittal_2b.csv -m "Submisssion 2. ALS by month (users) and day (items), rating = meter_reading"
 
 """
 from pyspark.ml import PipelineModel
