@@ -4,15 +4,13 @@ from __future__ import print_function
 
 spark-submit --driver-memory=20g --conf spark.dynamicAllocation.enabled=true --conf spark.shuffle.service.enabled=true
 """
-from pyspark.ml import Pipeline, PipelineModel
-from pyspark.ml.feature import Imputer, Bucketizer
+from pyspark.ml import Pipeline
 from pyspark.ml.recommendation import ALS
 from pyspark.ml.evaluation import RegressionEvaluator
 from pyspark.ml.tuning import CrossValidator, ParamGridBuilder
 
 import pyspark.sql.functions as F
 from pyspark.sql import SparkSession
-from pyspark.sql.types import StructType, StructField, StringType, DoubleType, IntegerType
 
 spark = SparkSession.builder.appName("ALS Training") \
 	.enableHiveSupport() \
@@ -42,11 +40,8 @@ def get_buildings(building_id=None):
 		
 def fit(df):
 
-	day_splits = [-float("inf"), 2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0, 22.0, 24.0, 26.0, 28.0, float("inf")]
-	bucketizer = Bucketizer(splits=day_splits, inputCol="day", outputCol="bucket", handleInvalid="error")
-	
-	als = ALS(userCol="month", itemCol="bucket", ratingCol="meter_reading")
-	pipeline = Pipeline(stages=[bucketizer, als])
+	als = ALS(userCol="month", itemCol="day", ratingCol="meter_reading")
+	pipeline = Pipeline(stages=[als])
 	evaluator = RegressionEvaluator(labelCol="meter_reading", predictionCol="prediction", metricName="rmse")
 
 	params = ParamGridBuilder() \
@@ -55,12 +50,12 @@ def fit(df):
 				.addGrid(als.nonnegative, [False]) \
 				.build()
 
-	validator = CrossValidator(estimator=pipeline, estimatorParamMaps=params, evaluator=evaluator, numFolds=2, seed=51)
+	validator = CrossValidator(estimator=pipeline, estimatorParamMaps=params, evaluator=evaluator, numFolds=3, parallelism=4, seed=51)
 	model = validator.fit(df)
 
 	return model.bestModel
 
-def save_model(building_id, meter, model):
+def save_model(model, building_id, meter):
 
 	model_path = "output/als_model_{0}_{1}".format(building_id, meter)
 	model.write().overwrite().save(model_path)
@@ -68,14 +63,9 @@ def save_model(building_id, meter, model):
 
 print("Loading all data")
 df = spark.table("training")
-df = df.dropna(how="all", subset="air_temperature")
-df = df.withColumn("air_temperature", df.air_temperature.cast("integer"))
+df.cache()
 
-print("Caching splits")
-training, _ = df.randomSplit([0.8, 0.2])
-training.cache()
-
-starting_building = 11
+starting_building = 790
 buildings = get_buildings(starting_building)
 
 for row in buildings.toLocalIterator():
@@ -83,7 +73,7 @@ for row in buildings.toLocalIterator():
 	building_id = row.building_id
 
 	print("Filtering training data for building: {0}".format(building_id))
-	building = get_building(training, building_id)
+	building = get_building(df, building_id)
 	meters = get_meters(building)
 
 	for row in meters.toLocalIterator():
@@ -94,7 +84,7 @@ for row in buildings.toLocalIterator():
 		model = fit(building_meter)
 
 		print("Saving model")
-		save_model(building_id, meter_id, model)
+		save_model(model, building_id, meter_id)
 
 
 

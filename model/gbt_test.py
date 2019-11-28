@@ -152,10 +152,6 @@ for row in buildings.toLocalIterator():
 		metric.coalesce(1).write.saveAsTable("gbt_predictions_metrics", format="parquet", mode="append")
 		
 
-"""
-RMSLE = 0.88 is based upon 939 / 1449 buildings (buildings 510 - 1448, zero-based index). Made a mistake by dropping gbt_predictions
-for buildings 0 - 509 after restarting job due to memory issues
-"""
 cols = ["timestamp", "building_id", "meter", "meter_reading", "prediction", "log_squared_error"]
 
 p = spark.table("gbt_predictions")
