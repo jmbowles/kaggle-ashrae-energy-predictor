@@ -56,8 +56,8 @@ print("Loading test data for prediction submittal")
 test = spark.table("test")
 test.cache()
 
-submit_id = 2
-algo = "als"
+submit_id = 4
+algo = "als_by_meter_month_day"
 
 buildings = spark.read.load("../datasets/building_metadata.csv", format="csv", sep=",", inferSchema="true", header="true").select("building_id")
 
