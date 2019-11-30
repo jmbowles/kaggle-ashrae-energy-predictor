@@ -1,7 +1,7 @@
 from __future__ import print_function
 """
 0: electricity, 1: chilledwater, 2: steam, 3: hotwater
-kaggle competitions submit -c ashrae-energy-prediction -f submittal_2b.csv -m "Submisssion 2. ALS by month (users) and day (items), rating = meter_reading"
+kaggle competitions submit -c ashrae-energy-prediction -f submittal_4a.csv.gz -m "Submisssion 4. ALS by meter, month (users), and day (items), rating = meter_reading"
 
 """
 from pyspark.ml import PipelineModel
@@ -38,7 +38,7 @@ def to_csv(submit_id, algo):
 
 	import os
 
-	file_name = "submittal_{0}.csv".format(submit_id)
+	file_name = "submittal_{0}.gzip".format(submit_id)
 	outdir = "./output/submit"
 
 	if not os.path.exists(outdir):
@@ -81,6 +81,8 @@ for row in buildings.toLocalIterator():
 		predictions = predictions.withColumn("submit_id", F.lit(submit_id))
 		predictions = predictions.withColumn("algo", F.lit(algo))
 		predictions = predictions.withColumnRenamed("prediction", "meter_reading").select("row_id", "building_id", "meter", "timestamp", "meter_reading", "submit_id", "submitted_ts", "algo")
+		predictions = predictions.withColumn("meter_reading", F.when(predictions.meter_reading < 0, F.lit(0.0)).otherwise(predictions.meter_reading))
+		predictions = predictions.fillna(0.0, "meter_reading")
 		predictions.coalesce(1).write.saveAsTable("submitted_predictions", format="parquet", mode="append")
 				
 		

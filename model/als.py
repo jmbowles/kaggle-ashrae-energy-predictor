@@ -65,7 +65,7 @@ print("Loading all data")
 df = spark.table("training")
 df.cache()
 
-starting_building = 790
+starting_building = 1292
 buildings = get_buildings(starting_building)
 
 for row in buildings.toLocalIterator():
