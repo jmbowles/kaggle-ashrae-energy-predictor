@@ -38,6 +38,23 @@ def get_buildings(building_id=None):
 	else:
 		return df
 		
+def impute(df, building_id, meter):
+
+	time_series = spark.sql("SELECT explode(sequence(to_timestamp('2016-01-01'), to_timestamp('2017-01-02'), interval 1 hour))").withColumnRenamed("col", "timestamp_seq")
+	joined = time_series.join(df, [time_series.timestamp_seq == df.timestamp], "left_outer")
+	median = df.approxQuantile("meter_reading", [0.5], 0.001)[0]
+	imputed = joined.fillna(median, ["meter_reading"])
+	imputed = imputed.drop("timestamp")
+	imputed = imputed.withColumnRenamed("timestamp_seq", "timestamp")
+	imputed = imputed.withColumn("building_id", F.lit(building_id))
+	imputed = imputed.withColumn("meter", F.lit(meter))
+	imputed = imputed.withColumn("month", F.month(imputed.timestamp))
+	imputed = imputed.withColumn("day", F.dayofmonth(imputed.timestamp))
+	imputed = imputed.withColumn("hour", F.hour(imputed.timestamp))
+	imputed = imputed.withColumn("meter_reading", F.when(imputed.meter_reading == 0, median).otherwise(imputed.meter_reading))
+
+	return imputed
+
 def fit(df):
 
 	als = ALS(userCol="month", itemCol="day", ratingCol="meter_reading")
@@ -65,7 +82,7 @@ print("Loading all data")
 df = spark.table("training")
 df.cache()
 
-starting_building = 1292
+starting_building = None
 buildings = get_buildings(starting_building)
 
 for row in buildings.toLocalIterator():
@@ -81,6 +98,7 @@ for row in buildings.toLocalIterator():
 		meter_id = row.meter
 		building_meter = get_meter(building, meter_id)
 		print("Applying fit for building: {0}, meter {1}".format(building_id, meter_id))
+		building_meter = impute(building_meter, building_id, meter_id)
 		model = fit(building_meter)
 
 		print("Saving model")
