@@ -42,7 +42,7 @@ def get_buildings(building_id=None):
 	else:
 		return df
 
-def impute(df):
+def impute(df, building_id, meter):
 
 	time_series = spark.sql("SELECT explode(sequence(to_timestamp('2016-01-01'), to_timestamp('2017-01-02'), interval 1 hour))").withColumnRenamed("col", "timestamp_seq")
 	joined = time_series.join(df, [time_series.timestamp_seq == df.timestamp], "left_outer")
@@ -50,6 +50,8 @@ def impute(df):
 	imputed = joined.fillna(median, ["meter_reading"])
 	imputed = imputed.drop("timestamp")
 	imputed = imputed.withColumnRenamed("timestamp_seq", "timestamp")
+	imputed = imputed.withColumn("building_id", F.lit(building_id))
+	imputed = imputed.withColumn("meter", F.lit(meter))
 	imputed = imputed.withColumn("month", F.month(imputed.timestamp))
 	imputed = imputed.withColumn("day", F.dayofmonth(imputed.timestamp))
 	imputed = imputed.withColumn("hour", F.hour(imputed.timestamp))
@@ -128,7 +130,7 @@ for row in buildings.toLocalIterator():
 		meter_id = row.meter
 		building_meter = get_meter(building, meter_id)
 		print("Applying fit for building: {0}, meter {1}".format(building_id, meter_id))
-		building_meter = impute(building_meter)
+		building_meter = impute(building_meter, building_id, meter_id)
 		model = fit(building_meter)
 
 		print("Saving model")
@@ -136,7 +138,7 @@ for row in buildings.toLocalIterator():
 
 		print("Predicting test data")
 		building_meter = get_meter(test_building, meter_id)
-		building_meter = impute(building_meter)
+		building_meter = impute(building_meter, building_id, meter_id)
 		prediction = predict(model, building_meter)
 
 		print("Saving predictions")
