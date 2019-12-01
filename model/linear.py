@@ -4,6 +4,8 @@ from __future__ import print_function
 
 spark-submit --driver-memory=20g --conf spark.dynamicAllocation.enabled=true --conf spark.shuffle.service.enabled=true
 """
+import math
+
 from pyspark.ml import Pipeline
 from pyspark.ml.feature import VectorAssembler, Imputer, PolynomialExpansion
 from pyspark.ml.regression import LinearRegression
@@ -36,7 +38,7 @@ def load_buildings(building_id=None):
 	df = spark.read.load("../datasets/building_metadata.csv", format="csv", sep=",", inferSchema="true", header="true").select("building_id").orderBy("building_id")
 
 	if building_id:
-		return df.where(df.building_id >= building_id).orderBy("building_id")
+		return df.where(df.building_id == building_id).orderBy("building_id")
 	else:
 		return df
 
@@ -176,9 +178,9 @@ print("Loading all data")
 df = spark.table("training")
 df = df.withColumn("meter_reading", F.when(df.meter_reading == 0, F.lit(1.0)).otherwise(df.meter_reading))
 
-#print("Dropping tables")
-#spark.sql("drop table if exists linear_predictions")
-#spark.sql("drop table if exists linear_predictions_metrics")
+print("Dropping tables")
+spark.sql("drop table if exists linear_predictions")
+spark.sql("drop table if exists linear_predictions_metrics")
 
 print("Caching splits")
 training, test = df.randomSplit([0.8, 0.2])
@@ -189,12 +191,13 @@ schema = StructType([StructField("building_id", IntegerType(), False),
 			StructField("season", StringType(), False), 
 			StructField("rmse", DoubleType(), False),
 			StructField("r2", DoubleType(), False),
-			StructField("mae", DoubleType(), False)])
+			StructField("mae", DoubleType(), False),
+			StructField("rmsle", DoubleType(), False)])
 
 season_months = {"Winter": "(12,1,2)", "Spring": "(3,4,5)", "Summer": "(6,7,8)", "Fall": "(9,10,11)"}
 
-starting_building = 1436
-save_existing_predictions(starting_building)
+starting_building = 28
+#save_existing_predictions(starting_building)
 buildings = load_buildings(starting_building)
 
 for row in buildings.toLocalIterator():
@@ -223,8 +226,13 @@ for row in buildings.toLocalIterator():
 		prediction.coalesce(1).write.saveAsTable("linear_predictions", format="parquet", mode="append")
 		
 		print("Saving metrics")
+		prediction = prediction.withColumn("log_squared_error", F.pow(F.log(prediction.prediction + 1) - F.log(prediction.meter_reading + 1), 2))
+		log_squared_error = prediction.agg(F.sum("log_squared_error").alias("lse")).collect()[0]["lse"]
+		rmsle = math.sqrt(log_squared_error / prediction.count())
+
 		season, rmse, r2, mae = metrics
-		metric = spark.createDataFrame([(building_id, season, rmse, r2, mae)], schema)
+		print("RMSE, R2, MAE, RMSLE: {0}, {1}, {2}, {3}".format(rmse, r2, mae, rmsle))
+		metric = spark.createDataFrame([(building_id, season, rmse, r2, mae, rmsle)], schema)
 		metric.coalesce(1).write.saveAsTable("linear_predictions_metrics", format="parquet", mode="append")
 
 '''

@@ -42,16 +42,25 @@ def get_buildings(building_id=None):
 	else:
 		return df
 
+def impute(df):
+
+	time_series = spark.sql("SELECT explode(sequence(to_timestamp('2016-01-01'), to_timestamp('2017-01-02'), interval 1 hour))").withColumnRenamed("col", "timestamp_seq")
+	joined = time_series.join(df, [time_series.timestamp_seq == df.timestamp], "left_outer")
+	median = df.approxQuantile("meter_reading", [0.5], 0.001)[0]
+	imputed = joined.fillna(median, ["meter_reading"])
+	imputed = imputed.drop("timestamp")
+	imputed = imputed.withColumnRenamed("timestamp_seq", "timestamp")
+	imputed = imputed.withColumn("month", F.month(imputed.timestamp))
+	imputed = imputed.withColumn("day", F.dayofmonth(imputed.timestamp))
+	imputed = imputed.withColumn("hour", F.hour(imputed.timestamp))
+	imputed = imputed.withColumn("meter_reading", F.when(imputed.meter_reading == 0, median).otherwise(imputed.meter_reading))
+
+	return imputed
+
 def fit(df):
 	
-	#imputer = Imputer(strategy="median", inputCols=["air_temperature"], outputCols=["air_temperature_est"])
-	#temperature_splits = [-float("inf"), -23.0, -18.0, -13.0, -8.0, -3.0, 2.0, 7.0, 12.0, 17.0, 22.0, 27.0, 32.0, 37.0, float("inf")]
-	#bucketizer = Bucketizer(splits=temperature_splits, inputCol="air_temperature_est", outputCol="bucket", handleInvalid="error")
-	
-	#als = ALS(userCol="month", itemCol="bucket", ratingCol="meter_reading")
-	als = ALS(userCol="month", itemCol="day", ratingCol="meter_reading")
+	als = ALS(userCol="month", itemCol="day", ratingCol="meter_reading", coldStartStrategy="nan")
 	pipeline = Pipeline(stages=[als])
-	#pipeline = Pipeline(stages=[imputer, bucketizer, als])
 	evaluator = RegressionEvaluator(labelCol="meter_reading", predictionCol="prediction", metricName="rmse")
 
 	params = ParamGridBuilder() \
@@ -101,7 +110,7 @@ training, test = df.randomSplit([0.8, 0.2])
 training.cache()
 test.cache()
 
-starting_building = 52
+starting_building = 28
 buildings = get_buildings(starting_building)
 
 for row in buildings.toLocalIterator():
@@ -119,6 +128,7 @@ for row in buildings.toLocalIterator():
 		meter_id = row.meter
 		building_meter = get_meter(building, meter_id)
 		print("Applying fit for building: {0}, meter {1}".format(building_id, meter_id))
+		building_meter = impute(building_meter)
 		model = fit(building_meter)
 
 		print("Saving model")
@@ -126,6 +136,7 @@ for row in buildings.toLocalIterator():
 
 		print("Predicting test data")
 		building_meter = get_meter(test_building, meter_id)
+		building_meter = impute(building_meter)
 		prediction = predict(model, building_meter)
 
 		print("Saving predictions")
