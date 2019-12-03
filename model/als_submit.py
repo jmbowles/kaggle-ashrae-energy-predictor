@@ -1,7 +1,7 @@
 from __future__ import print_function
 """
 0: electricity, 1: chilledwater, 2: steam, 3: hotwater
-kaggle competitions submit -c ashrae-energy-prediction -f submittal_4a.csv.gz -m "Submisssion 4. ALS by meter, month (users), and day (items), rating = meter_reading"
+kaggle competitions submit -c ashrae-energy-prediction -f submittal_5.csv.gz -m "Submisssion 5. ALS by meter, month (users), and day (items), rating = meter_reading"
 
 """
 from pyspark.ml import PipelineModel
@@ -38,7 +38,7 @@ def to_csv(submit_id, algo):
 
 	import os
 
-	file_name = "submittal_{0}.gzip".format(submit_id)
+	file_name = "submittal_{0}.csv.gzip".format(submit_id)
 	outdir = "./output/submit"
 
 	if not os.path.exists(outdir):
@@ -56,8 +56,8 @@ print("Loading test data for prediction submittal")
 test = spark.table("test")
 test.cache()
 
-submit_id = 4
-algo = "als_by_meter_month_day"
+submit_id = 5
+algo = "als"
 
 buildings = spark.read.load("../datasets/building_metadata.csv", format="csv", sep=",", inferSchema="true", header="true").select("building_id")
 
