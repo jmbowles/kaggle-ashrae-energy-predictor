@@ -56,6 +56,8 @@ def impute(df, building_id, meter):
 	imputed = imputed.withColumn("day", F.dayofmonth(imputed.timestamp))
 	imputed = imputed.withColumn("hour", F.hour(imputed.timestamp))
 	imputed = imputed.withColumn("meter_reading", F.when(imputed.meter_reading == 0, median).otherwise(imputed.meter_reading))
+	imputed = imputed.withColumn("meter_reading_orig", imputed.meter_reading)
+	imputed = imputed.withColumn("meter_reading", F.log1p(imputed.meter_reading))
 
 	return imputed
 
@@ -112,7 +114,7 @@ training, test = df.randomSplit([0.8, 0.2])
 training.cache()
 test.cache()
 
-starting_building = 28
+starting_building = 2
 buildings = get_buildings(starting_building)
 
 for row in buildings.toLocalIterator():
@@ -156,11 +158,14 @@ for row in buildings.toLocalIterator():
 		metric.coalesce(1).write.saveAsTable("als_test_predictions_metrics", format="parquet", mode="append")
 	
 
-cols = ["timestamp", "building_id", "meter", "meter_reading", "prediction", "log_squared_error"]
+cols = ["timestamp", "building_id", "meter", "meter_reading", "meter_reading_orig", "prediction", "log_squared_error"]
 
 print("Predictions")
 p = spark.table("als_test_predictions")
 p = p.withColumn("log_squared_error", F.pow(F.log(p.prediction + 1) - F.log(p.meter_reading + 1), 2)).select(*cols).orderBy("building_id", "timestamp")
+p = p.withColumn("prediction_log1p", p.prediction)
+p = p.withColumn("prediction", F.expm1(p.prediction))
+
 p.orderBy("timestamp").show()
 
 log_squared_error = p.agg(F.sum("log_squared_error").alias("lse")).collect()[0]["lse"]

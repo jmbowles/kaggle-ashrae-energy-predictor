@@ -52,6 +52,7 @@ def impute(df, building_id, meter):
 	imputed = imputed.withColumn("day", F.dayofmonth(imputed.timestamp))
 	imputed = imputed.withColumn("hour", F.hour(imputed.timestamp))
 	imputed = imputed.withColumn("meter_reading", F.when(imputed.meter_reading == 0, median).otherwise(imputed.meter_reading))
+	imputed = imputed.withColumn("meter_reading", F.log1p(imputed.meter_reading))
 
 	return imputed
 
@@ -82,7 +83,7 @@ print("Loading all data")
 df = spark.table("training")
 df.cache()
 
-starting_building = 1291
+starting_building = None
 buildings = get_buildings(starting_building)
 
 for row in buildings.toLocalIterator():

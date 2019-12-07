@@ -1,7 +1,7 @@
 from __future__ import print_function
 """
 0: electricity, 1: chilledwater, 2: steam, 3: hotwater
-kaggle competitions submit -c ashrae-energy-prediction -f submittal_5.csv.gz -m "Submisssion 5. ALS by meter, month (users), and day (items), rating = meter_reading"
+kaggle competitions submit -c ashrae-energy-prediction -f submittal_6.csv.gz -m "Submisssion 6. ALS by meter, month (users), and day (items), rating = meter_reading in log1p"
 
 """
 from pyspark.ml import PipelineModel
@@ -56,8 +56,8 @@ print("Loading test data for prediction submittal")
 test = spark.table("test")
 test.cache()
 
-submit_id = 5
-algo = "als"
+submit_id = 6
+algo = "als_log1p"
 
 buildings = spark.read.load("../datasets/building_metadata.csv", format="csv", sep=",", inferSchema="true", header="true").select("building_id")
 
@@ -75,6 +75,7 @@ for row in buildings.toLocalIterator():
 		print("Predicting meter readings for building {0} meter {1}".format(building_id, meter_id))
 		model = load_model(building_id, meter_id)
 		predictions = model.transform(building_meter)
+		predictions = predictions.withColumn("prediction", F.expm1(predictions.prediction))
 
 		print("Saving submission")
 		predictions = predictions.withColumn("submitted_ts", F.current_timestamp())
