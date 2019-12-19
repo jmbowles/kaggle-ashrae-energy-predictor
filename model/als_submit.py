@@ -48,7 +48,7 @@ def to_csv(submit_id, algo):
 
 	predictions = spark.table("submitted_predictions")
 	submittal = predictions.where(predictions.algo == algo)
-	submittal.select("row_id", "meter_reading").coalesce(1).toPandas().to_csv(path, header=True, index=False, compression="gzip")
+	submittal.select("row_id", "meter_reading").coalesce(1).toPandas().to_csv(path, header=True, index=False, compression="gz")
 	print("Total rows written to '{0}': {1}".format(file_name, submittal.count()))
 
 
